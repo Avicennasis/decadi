@@ -76,7 +76,7 @@ The calendar covers:
 decadi/
 ├── decadi.py              # Main script (single file, all logic)
 ├── assets/
-│   └── transparent.png    # 1px transparent dummy icon
+│   └── transparent.png    # 22×22 transparent dummy icon
 ├── decadi.desktop         # XDG autostart entry
 ├── LICENSE                # MIT
 └── README.md              # Usage, install, screenshot

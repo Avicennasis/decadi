@@ -35,6 +35,7 @@
 - [ ] **Step 1: Create the transparent icon**
 
 ```bash
+mkdir -p assets
 python3 -c "
 from PIL import Image
 img = Image.new('RGBA', (22, 22), (0, 0, 0, 0))
@@ -45,6 +46,7 @@ img.save('assets/transparent.png')
 If Pillow is not installed, use ImageMagick instead:
 
 ```bash
+mkdir -p assets
 convert -size 22x22 xc:transparent assets/transparent.png
 ```
 
@@ -85,10 +87,24 @@ EOF
 """Décadi — French Revolutionary decimal time indicator for the GNOME system tray."""
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Create .gitignore**
+
+```
+__pycache__/
+*.pyc
+.pytest_cache/
+```
+
+- [ ] **Step 5: Make the script executable**
 
 ```bash
-git add assets/transparent.png LICENSE decadi.py
+chmod +x decadi.py
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add assets/transparent.png LICENSE decadi.py .gitignore
 git commit -m "chore: scaffold project with transparent icon and license"
 ```
 
@@ -120,7 +136,12 @@ class TestDecimalTime:
         assert (h, m, s) == (5, 0, 0)
 
     def test_end_of_day(self):
+        # 86399 * 100000 / 86400 = 99998.84 → (9, 99, 98)
         h, m, s = decimal_time(23, 59, 59, 0)
+        assert (h, m, s) == (9, 99, 98)
+
+    def test_last_microsecond(self):
+        h, m, s = decimal_time(23, 59, 59, 999999)
         assert (h, m, s) == (9, 99, 99)
 
     def test_known_conversion(self):
@@ -188,7 +209,7 @@ def format_decimal_time(dec_h, dec_m, dec_s, show_seconds=True):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python3 -m pytest tests/test_decimal_time.py -v`
-Expected: All 9 tests PASS
+Expected: All 10 tests PASS
 
 - [ ] **Step 5: Commit**
 
@@ -352,6 +373,12 @@ class TestRepublicanDate:
         result = republican_date(date(2026, 9, 17))
         assert result == "Jour de la Vertu CCXXXIV"
 
+    def test_leap_year_6th_sansculottide(self):
+        # Republican Year IV is a leap year (4 % 4 == 0)
+        # Sept 21, 1796 = day 365 of Year IV → 6th sansculottide
+        result = republican_date(date(1796, 9, 21))
+        assert result == "Jour de la Révolution IV"
+
     def test_month_names_order(self):
         # Oct 22, 2025 = 1 Brumaire CCXXXIV (2nd month)
         result = republican_date(date(2025, 10, 22))
@@ -365,7 +392,7 @@ Expected: FAIL with `ImportError`
 
 - [ ] **Step 3: Implement is_republican_leap_year and republican_date**
 
-Add to `decadi.py`:
+Add to `decadi.py` (the `from datetime` import goes at the top of the file, below the existing imports):
 
 ```python
 from datetime import date, datetime
@@ -429,7 +456,7 @@ def republican_date(today):
 Run: `python3 -m pytest tests/test_republican_calendar.py -v`
 Expected: All tests PASS
 
-If any assertions are off by a day due to the epoch boundary calculation, adjust the test expectations to match the implementation's output and verify correctness manually against a known Republican calendar reference.
+If any assertions fail, debug the implementation against an authoritative Republican calendar reference — do not adjust test expectations to match the implementation.
 
 - [ ] **Step 5: Run the full test suite**
 
@@ -454,28 +481,12 @@ This task adds the GTK/AppIndicator GUI layer. These components require a runnin
 
 - [ ] **Step 1: Add dependency check and imports at top of decadi.py**
 
-Replace the shebang block at the top of `decadi.py`:
+Add these imports to the top of `decadi.py`, **below** the existing `from datetime import date, datetime` line. The GUI imports are placed inside `main()` (see Step 3) so that headless test runs can still import the pure-Python functions without requiring GTK.
 
 ```python
-#!/usr/bin/env python3
-"""Décadi — French Revolutionary decimal time indicator for the GNOME system tray."""
-
 import os
 import signal
 import sys
-
-try:
-    import gi
-    gi.require_version("Gtk", "3.0")
-    gi.require_version("AyatanaAppIndicator3", "0.1")
-    from gi.repository import AyatanaAppIndicator3, GLib, Gtk, Gio
-except ValueError as e:
-    missing = str(e).split("Namespace ")[-1].split(" ")[0]
-    print(f"Error: missing system package for {missing}.", file=sys.stderr)
-    print("Install: sudo apt install python3-gi gir1.2-ayatanaappindicator3-0.1", file=sys.stderr)
-    sys.exit(1)
-
-from datetime import date, datetime
 ```
 
 - [ ] **Step 2: Add the DecadiIndicator class**
@@ -486,13 +497,16 @@ Add after the `republican_date` function:
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ICON_PATH = os.path.join(SCRIPT_DIR, "assets", "transparent.png")
 DBUS_NAME = "systems.simmons.Decadi"
+MAX_TICK_DELAY_MS = 5000
 
 
 class DecadiIndicator:
-    def __init__(self):
+    def __init__(self, AyatanaAppIndicator3, GLib, Gtk):
         self.show_seconds = True
         self._cached_date_str = ""
         self._cached_date_key = None
+        self._GLib = GLib
+        self._Gtk = Gtk
 
         icon = ICON_PATH if os.path.isfile(ICON_PATH) else "image-missing"
         self.indicator = AyatanaAppIndicator3.Indicator.new(
@@ -506,6 +520,7 @@ class DecadiIndicator:
         self._tick()
 
     def _build_menu(self):
+        Gtk = self._Gtk
         menu = Gtk.Menu()
 
         self.menu_decimal = Gtk.MenuItem(label="")
@@ -540,21 +555,23 @@ class DecadiIndicator:
 
     def _on_toggle_seconds(self, item):
         self.show_seconds = item.get_active()
-        self._update_display()
+        self._update_display(datetime.now())
 
     def _tick(self):
-        self._update_display()
         now = datetime.now()
+        try:
+            self._update_display(now)
+        except Exception:
+            import traceback; traceback.print_exc()
         total_sec = now.hour * 3600 + now.minute * 60 + now.second + now.microsecond / 1_000_000
         current_dec_sec = total_sec * 100_000 / 86_400
         next_dec_sec = int(current_dec_sec) + 1
         next_real_sec = next_dec_sec * 86_400 / 100_000
-        delay_ms = max(50, int((next_real_sec - total_sec) * 1000))
-        GLib.timeout_add(delay_ms, self._tick)
+        delay_ms = max(50, min(MAX_TICK_DELAY_MS, int((next_real_sec - total_sec) * 1000)))
+        self._GLib.timeout_add(delay_ms, self._tick)
         return False  # one-shot
 
-    def _update_display(self):
-        now = datetime.now()
+    def _update_display(self, now):
         dec_h, dec_m, dec_s = decimal_time(now.hour, now.minute, now.second, now.microsecond)
 
         self.indicator.set_label(
@@ -581,28 +598,42 @@ Add at the end of `decadi.py`:
 
 ```python
 def main():
+    try:
+        import gi
+        gi.require_version("Gtk", "3.0")
+        gi.require_version("AyatanaAppIndicator3", "0.1")
+        from gi.repository import AyatanaAppIndicator3, GLib, Gtk, Gio
+    except (ImportError, ValueError) as e:
+        print(f"Error: missing system package: {e}", file=sys.stderr)
+        print("Install: sudo apt install python3-gi gir1.2-ayatanaappindicator3-0.1", file=sys.stderr)
+        sys.exit(1)
+
     bus = Gio.bus_get_sync(Gio.BusType.SESSION)
     flags = Gio.BusNameOwnerFlags.DO_NOT_QUEUE
-    result = Gio.bus_own_name_on_connection(
+    owner_id = Gio.bus_own_name_on_connection(
         bus, DBUS_NAME, flags, None, None,
     )
-    # Check if we actually got the name
-    variant = bus.call_sync(
-        "org.freedesktop.DBus", "/org/freedesktop/DBus",
-        "org.freedesktop.DBus", "GetNameOwner",
-        GLib.Variant("(s)", (DBUS_NAME,)),
-        GLib.VariantType("(s)"),
-        Gio.DBusCallFlags.NONE, -1, None,
-    )
-    owner = variant.get_child_value(0).get_string()
-    my_name = bus.get_unique_name()
-    if owner != my_name:
-        sys.exit(0)
 
-    signal.signal(signal.SIGINT, lambda *_: Gtk.main_quit())
-    signal.signal(signal.SIGTERM, lambda *_: Gtk.main_quit())
+    # Flush to ensure the name request is processed, then check ownership
+    bus.flush_sync()
+    try:
+        variant = bus.call_sync(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus",
+            "org.freedesktop.DBus", "GetNameOwner",
+            GLib.Variant("(s)", (DBUS_NAME,)),
+            GLib.VariantType("(s)"),
+            Gio.DBusCallFlags.NONE, -1, None,
+        )
+        owner = variant.get_child_value(0).get_string()
+        if owner != bus.get_unique_name():
+            sys.exit(0)
+    except Exception:
+        pass  # If DBus check fails, proceed (single-instance is best-effort)
 
-    DecadiIndicator()
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, Gtk.main_quit)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, Gtk.main_quit)
+
+    indicator = DecadiIndicator(AyatanaAppIndicator3, GLib, Gtk)
     Gtk.main()
 
 
@@ -626,7 +657,7 @@ Verify:
 - [ ] **Step 5: Run the full test suite to verify nothing broke**
 
 Run: `python3 -m pytest tests/ -v`
-Expected: All existing tests still PASS (the new GUI code is not imported during tests unless a display is available)
+Expected: All existing tests still PASS (GUI imports are inside `main()`, so pure-Python functions remain importable without GTK)
 
 - [ ] **Step 6: Commit**
 
