@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Décadi — French Revolutionary decimal time indicator for the GNOME system tray."""
 
+from datetime import date, datetime
+
 PREFIX = "⑩"
 
 
@@ -35,3 +37,57 @@ def to_roman(num):
             result.append(numeral)
             num -= value
     return "".join(result)
+
+
+REPUBLICAN_EPOCH = date(1792, 9, 22)
+
+REPUBLICAN_MONTHS = [
+    "Vendémiaire", "Brumaire", "Frimaire",
+    "Nivôse", "Pluviôse", "Ventôse",
+    "Germinal", "Floréal", "Prairial",
+    "Messidor", "Thermidor", "Fructidor",
+]
+
+SANSCULOTTIDES = [
+    "Jour de la Vertu",
+    "Jour du Génie",
+    "Jour du Travail",
+    "Jour de l'Opinion",
+    "Jour des Récompenses",
+    "Jour de la Révolution",
+]
+
+
+def is_republican_leap_year(year):
+    """Check if a Republican year is a leap year using the Romme convention."""
+    if year % 4 != 0:
+        return False
+    if year % 100 != 0:
+        return True
+    return year % 400 == 0
+
+
+def republican_date(today):
+    """Convert a Gregorian date to a Republican calendar date string."""
+    if today < REPUBLICAN_EPOCH:
+        return "(pre-epoch)"
+
+    delta_days = (today - REPUBLICAN_EPOCH).days
+
+    year = 1
+    while True:
+        days_in_year = 366 if is_republican_leap_year(year) else 365
+        if delta_days < days_in_year:
+            break
+        delta_days -= days_in_year
+        year += 1
+
+    day_of_year = delta_days  # 0-indexed
+
+    if day_of_year < 360:
+        month_index = day_of_year // 30
+        day_of_month = (day_of_year % 30) + 1
+        return f"{day_of_month} {REPUBLICAN_MONTHS[month_index]} {to_roman(year)}"
+
+    sansculottide_index = day_of_year - 360
+    return f"{SANSCULOTTIDES[sansculottide_index]} {to_roman(year)}"
