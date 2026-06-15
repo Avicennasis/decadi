@@ -19,3 +19,19 @@ def format_decimal_time(dec_h, dec_m, dec_s, show_seconds=True):
     if show_seconds:
         return f"{PREFIX} {dec_h}:{dec_m:02d}:{dec_s:02d}"
     return f"{PREFIX} {dec_h}:{dec_m:02d}"
+
+
+def to_roman(num):
+    """Convert integer to Roman numeral string. Returns '' for values <= 0."""
+    if num <= 0:
+        return ""
+    result = []
+    for value, numeral in (
+        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+    ):
+        while num >= value:
+            result.append(numeral)
+            num -= value
+    return "".join(result)
