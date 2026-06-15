@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Décadi
+Comment=French Revolutionary decimal time indicator
+Exec=python3 /home/avicennasis/github/avic/decadi/decadi.py
+Icon=/home/avicennasis/github/avic/decadi/assets/transparent.png
+Terminal=false
+Categories=Utility;Clock;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
